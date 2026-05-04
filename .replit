@@ -3,7 +3,7 @@ modules = ["python-3.11"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["cairo", "cargo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "libiconv", "libxcrypt", "openssl", "pkg-config", "qhull", "rustc", "tcl", "tk"]
+packages = ["cairo", "cargo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "libiconv", "libxcrypt", "openssl", "pkg-config", "qhull", "rustc", "tcl", "tk", "u-root-cmds"]
 
 [unitTest]
 language = "python3"
@@ -21,6 +21,10 @@ expertMode = true
 [[ports]]
 localPort = 5904
 externalPort = 80
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
 
 [userenv]
 
