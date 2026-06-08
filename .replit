@@ -1,13 +1,27 @@
+entrypoint = "main.py"
+modules = ["python-3.11"]
 
-# Создайте файл .replit
-cat > .replit << 'EOF'
+[nix]
+channel = "stable-25_05"
+packages = ["cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "pkg-config", "qhull", "tcl", "tk"]
+
+[unitTest]
 language = "python3"
-run = "python main.py"
 
-[env]
-PORT = "8080"
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix"]
+
+[deployment]
+run = ["python3", "main.py"]
+deploymentTarget = "cloudrun"
+
+[agent]
+expertMode = true
 
 [[ports]]
-localPort = 8080
+localPort = 5904
 externalPort = 80
-EOF
+
+[userenv]
+
+[userenv.shared]
