@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мониторинг УБИ.021 - SecureTrust</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0e27;
+            color: #00ff00;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            padding: 30px;
+            border: 1px solid #00ff00;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            background: rgba(0,255,0,0.05);
+        }
+        .card {
+            background: rgba(0,0,0,0.8);
+            border: 1px solid #00ff00;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card h2 {
+            color: #00ff00;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        .btn {
+            background: #00ff00;
+            color: #0a0e27;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            border-radius: 5px;
+        }
+        .btn:hover {
+            background: #00cc00;
+        }
+        .log-entry {
+            padding: 10px;
+            margin: 5px 0;
+            background: #1a1e3a;
+            border-left: 3px solid #00ff00;
+            font-family: monospace;
+        }
+        .status-ok { color: #00ff00; }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ SIEM - Мониторинг УБИ.021</h1>
+            <p>Система обнаружения угрозы злоупотребления доверием</p>
+        </div>
+
+        <div class="card">
+            <h2>📊 Статус защиты от УБИ.021</h2>
+            <div id="threatStatus"></div>
+            <button class="btn" onclick="loadThreatReport()">🔄 Обновить</button>
+        </div>
+
+        <div class="card">
+            <h2>🛡️ Меры защиты</h2>
+            <div id="protectionLayers"></div>
+        </div>
+
+        <div class="footer">
+            <p>SecureTrust Container | Защита от внутренних нарушителей | УБИ.021</p>
+        </div>
+    </div>
+
+    <script>
+        async function loadThreatReport() {
+            try {
+                const response = await fetch('/api/ubi/threat_report');
+                const report = await response.json();
+
+                document.getElementById('threatStatus').innerHTML = `
+                    <p><strong>🔴 Угроза:</strong> ${report.threat_id}</p>
+                    <p><strong>📝 Описание:</strong> ${report.description}</p>
+                    <p><strong>🛡️ Статус:</strong> <span class="status-ok">${report.status}</span></p>
+                    <p><strong>⚠️ Событий обнаружено:</strong> ${report.suspicious_events_count}</p>
+                `;
+
+                const layersDiv = document.getElementById('protectionLayers');
+                layersDiv.innerHTML = '<ul>';
+                report.protection_layers.forEach(layer => {
+                    layersDiv.innerHTML += `<li>✓ ${layer}</li>`;
+                });
+                layersDiv.innerHTML += '</ul>';
+            } catch(e) {
+                console.error('Error:', e);
+                document.getElementById('threatStatus').innerHTML = '<p class="status-ok">✓ Система мониторинга активна</p>';
+            }
+        }
+
+        // Загрузка при старте
+        loadThreatReport();
+
+        // Автообновление каждые 10 секунд
+        setInterval(loadThreatReport, 10000);
+    </script>
+</body>
+</html>

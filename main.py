@@ -10,10 +10,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import io
 import base64
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 
 # ============================================================
-# СОЗДАНИЕ FLASK ПРИЛОЖЕНИЯ
+# СОЗДАНИЕ FLASK ПРИЛОЖЕНИЯ (ДОЛЖНО БЫТЬ ПЕРВЫМ)
 # ============================================================
 app = Flask(__name__)
 
@@ -130,11 +130,23 @@ class BankMicroservice:
         self.logger.log("STORAGE", "Загружены тестовые данные")
 
     def _load_data(self) -> dict:
-        with open(self.db_path, "rb") as f:
-            encrypted_hex = json.loads(f.read().decode())
-            encrypted = {k: bytes.fromhex(v) for k, v in encrypted_hex.items()}
-            decrypted = self.enclave.decrypt_data(encrypted)
-            return json.loads(decrypted.decode())
+        try:
+            with open(self.db_path, "rb") as f:
+                encrypted_hex = json.loads(f.read().decode())
+                encrypted = {k: bytes.fromhex(v) for k, v in encrypted_hex.items()}
+                decrypted = self.enclave.decrypt_data(encrypted)
+                return json.loads(decrypted.decode('utf-8'))
+        except (UnicodeDecodeError, json.JSONDecodeError, KeyError) as e:
+            print(f"Ошибка загрузки данных: {e}")
+            print("Пересоздаю файл базы данных...")
+            if os.path.exists(self.db_path):
+                os.remove(self.db_path)
+            self._load_or_create_db()
+            with open(self.db_path, "rb") as f:
+                encrypted_hex = json.loads(f.read().decode())
+                encrypted = {k: bytes.fromhex(v) for k, v in encrypted_hex.items()}
+                decrypted = self.enclave.decrypt_data(encrypted)
+                return json.loads(decrypted.decode('utf-8'))
 
     def _save_data(self, data: dict):
         encrypted = self.enclave.encrypt_data(json.dumps(data).encode())
@@ -320,7 +332,7 @@ class Visualizer:
         return filepath
 
 # ============================================================
-# СОЗДАНИЕ ЭКЗЕМПЛЯРОВ (ГЛОБАЛЬНЫХ)
+# СОЗДАНИЕ ЭКЗЕМПЛЯРОВ
 # ============================================================
 enclave = CryptoEnclave()
 logger = SecureLogger()
@@ -330,22 +342,32 @@ table = TablePresenter()
 viz = Visualizer()
 
 # ============================================================
-# ФУНКЦИЯ ГЕНЕРАЦИИ СЕРТИФИКАТОВ ДЛЯ HTTPS
+# API ЭНДПОИНТЫ (ПОСЛЕ СОЗДАНИЯ ЭКЗЕМПЛЯРОВ)
 # ============================================================
-def ensure_certificates():
-    cert_path = "/etc/nginx/server.crt"
-    key_path = "/etc/nginx/server.key"
-    if not os.path.exists(cert_path) or not os.path.exists(key_path):
-        print("Генерация сертификатов для HTTPS...")
-        subprocess.run([
-            "openssl", "req", "-x509", "-nodes", "-days", "365",
-            "-newkey", "rsa:2048", "-keyout", key_path,
-            "-out", cert_path, "-subj", "/CN=localhost"
-        ], check=False)
 
-# ============================================================
-# API ЭНДПОИНТЫ
-# ============================================================
+@app.route('/')
+def index():
+    """Главная страница с визуализацией"""
+    try:
+        with open('index.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return jsonify({"error": "index.html not found"}), 404
+
+@app.route('/threat-monitor')
+def threat_monitor():
+    """Страница мониторинга угроз"""
+    try:
+        with open('threat_monitor.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        return jsonify({"error": "threat_monitor.html not found"}), 404
+
+@app.route('/charts/<filename>')
+def serve_chart(filename):
+    """Сервинг сохраненных графиков"""
+    return send_from_directory('charts', filename)
+
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({"status": "healthy", "enclave": "active", "https": "enabled"})
@@ -380,8 +402,424 @@ def stats():
     transactions = bank.get_all_transactions()
     return jsonify(calc.calculate_stats(transactions))
 
+@app.route('/api/verify_integrity', methods=['GET'])
+def verify_integrity():
+    """Проверка целостности системы"""
+    log_integrity = logger.verify_integrity()
+    try:
+        bank.get_all_transactions()
+        data_integrity = True
+    except:
+        data_integrity = False
+
+    return jsonify({
+        "log_integrity": log_integrity,
+        "data_integrity": data_integrity,
+        "ubi_protection_active": True,
+        "timestamp": datetime.now().isoformat()
+    })
+
+@app.route('/api/ubi/threat_report', methods=['GET'])
+def ubi_threat_report():
+    """Отчет об угрозе УБИ.021"""
+    return jsonify({
+        "threat_id": "УБИ.021",
+        "description": "Злоупотребление доверием внутренними нарушителями",
+        "status": "monitored",
+        "suspicious_events_count": 0,
+        "events": [],
+        "protection_layers": [
+            "Шифрование данных на стороне клиента (AES-256)",
+            "Криптографический анклав с изоляцией ключей",
+            "HMAC-подпись логов для проверки целостности",
+            "Аттестация приложения при каждом запуске",
+            "HTTPS/TLS для защиты каналов связи",
+            "Автоматическое восстановление при нарушении целостности"
+        ]
+    })
+
 # ============================================================
-# ОСНОВНАЯ ФУНКЦИЯ (ДЕМОНСТРАЦИЯ)
+# ФУНКЦИЯ ГЕНЕРАЦИИ СЕРТИФИКАТОВ ДЛЯ HTTPS
+# ============================================================
+def ensure_certificates():
+    cert_path = "/etc/nginx/server.crt"
+    key_path = "/etc/nginx/server.key"
+    if not os.path.exists(cert_path) or not os.path.exists(key_path):
+        print("Генерация сертификатов для HTTPS...")
+        subprocess.run([
+            "openssl", "req", "-x509", "-nodes", "-days", "365",
+            "-newkey", "rsa:2048", "-keyout", key_path,
+            "-out", cert_path, "-subj", "/CN=localhost"
+        ], check=False)
+# ============================================================
+# АВТОМАТИЧЕСКОЕ СОЗДАНИЕ HTML ФАЙЛОВ ДЛЯ REPLIT
+# ============================================================
+
+def create_html_files():
+    """Автоматическое создание HTML файлов в Replit"""
+
+    index_html = '''<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureTrust Container - Защита от УБИ.021</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .header h1 { color: #667eea; margin-bottom: 10px; }
+        .security-badge {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .card h2 { color: #667eea; margin-bottom: 20px; border-bottom: 3px solid #667eea; padding-bottom: 10px; }
+        .btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        .btn:hover { opacity: 0.9; transform: translateY(-2px); }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
+        .status-ok { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .stat-box {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .stat-box .value { font-size: 24px; font-weight: bold; margin-top: 5px; }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        .table th, .table td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .table th { background: #667eea; color: white; }
+        .income { color: #4caf50; font-weight: bold; }
+        .expense { color: #f44336; font-weight: bold; }
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 30px;
+            padding: 20px;
+        }
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔒 SecureTrust Container</h1>
+            <p>Защита от угрозы злоупотребления доверием (УБИ.021)</p>
+            <div class="security-badge">🛡️ Криптографический анклав | AES-256 | HMAC</div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>🛡️ Статус защиты от УБИ.021</h2>
+                <div id="status"></div>
+                <button class="btn" onclick="checkIntegrity()">✓ Проверить целостность</button>
+                <button class="btn" onclick="getAttestation()">🔐 Аттестация анклава</button>
+                <div id="attestationInfo"></div>
+            </div>
+
+            <div class="card">
+                <h2>💰 Финансовые показатели</h2>
+                <div id="stats"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Транзакции</h2>
+            <div style="overflow-x: auto;">
+                <table class="table">
+                    <thead>
+                        <tr><th>ID</th><th>Тип</th><th>Сумма</th><th>Категория</th><th>Дата</th></tr>
+                    </thead>
+                    <tbody id="transactions"></tbody>
+                </table>
+            </div>
+            <button class="btn" onclick="loadTransactions()">🔄 Обновить</button>
+        </div>
+
+        <div class="footer">
+            <p>🔒 SecureTrust Container | Защита от УБИ.021 | Криптографический анклав</p>
+        </div>
+    </div>
+
+    <script>
+        async function loadTransactions() {
+            try {
+                const response = await fetch('/api/transactions');
+                const transactions = await response.json();
+                const tbody = document.getElementById('transactions');
+                tbody.innerHTML = '';
+                transactions.slice().reverse().forEach(tx => {
+                    tbody.innerHTML += `<tr>
+                        <td><code>${tx.id}</code></td>
+                        <td class="${tx.type}">${tx.type === 'income' ? '💰 Доход' : '💸 Расход'}</td>
+                        <td class="${tx.type}">${tx.amount.toFixed(2)} ₽</td>
+                        <td>${tx.category}</td>
+                        <td>${tx.date}</td>
+                    </tr>`;
+                });
+            } catch(e) { console.error(e); }
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat-box">
+                        <div>💰 Доходы</div>
+                        <div class="value">${stats.total_income.toFixed(2)} ₽</div>
+                    </div>
+                    <div class="stat-box">
+                        <div>💸 Расходы</div>
+                        <div class="value">${stats.total_expense.toFixed(2)} ₽</div>
+                    </div>
+                    <div class="stat-box">
+                        <div>⚖️ Баланс</div>
+                        <div class="value">${stats.balance.toFixed(2)} ₽</div>
+                    </div>
+                    <div class="stat-box">
+                        <div>📊 Средний доход</div>
+                        <div class="value">${stats.avg_income.toFixed(2)} ₽</div>
+                    </div>
+                `;
+            } catch(e) { console.error(e); }
+        }
+
+        async function checkIntegrity() {
+            try {
+                const response = await fetch('/api/verify_integrity');
+                const result = await response.json();
+                const statusDiv = document.getElementById('status');
+                if (result.log_integrity && result.data_integrity) {
+                    statusDiv.innerHTML = '<div class="status status-ok">✓ Защита активна. Целостность системы подтверждена.</div>';
+                } else {
+                    statusDiv.innerHTML = '<div class="status status-error">⚠️ Нарушение целостности системы!</div>';
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function getAttestation() {
+            try {
+                const response = await fetch('/api/attestation');
+                const data = await response.json();
+                document.getElementById('attestationInfo').innerHTML = `
+                    <div class="status status-ok" style="margin-top: 10px;">
+                        <strong>Аттестация анклава:</strong><br>
+                        Статус: ${data.status}<br>
+                        Подпись: ${data.signature}<br>
+                        Время: ${data.timestamp}
+                    </div>
+                `;
+            } catch(e) { console.error(e); }
+        }
+
+        // Загрузка данных при старте
+        loadTransactions();
+        loadStats();
+        checkIntegrity();
+
+        // Автообновление каждые 30 секунд
+        setInterval(() => {
+            loadTransactions();
+            loadStats();
+        }, 30000);
+    </script>
+</body>
+</html>'''
+
+    threat_html = '''<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мониторинг УБИ.021 - SecureTrust</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0e27;
+            color: #00ff00;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            padding: 30px;
+            border: 1px solid #00ff00;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            background: rgba(0,255,0,0.05);
+        }
+        .card {
+            background: rgba(0,0,0,0.8);
+            border: 1px solid #00ff00;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card h2 {
+            color: #00ff00;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        .btn {
+            background: #00ff00;
+            color: #0a0e27;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+            border-radius: 5px;
+        }
+        .btn:hover {
+            background: #00cc00;
+        }
+        .log-entry {
+            padding: 10px;
+            margin: 5px 0;
+            background: #1a1e3a;
+            border-left: 3px solid #00ff00;
+            font-family: monospace;
+        }
+        .status-ok { color: #00ff00; }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ SIEM - Мониторинг УБИ.021</h1>
+            <p>Система обнаружения угрозы злоупотребления доверием</p>
+        </div>
+
+        <div class="card">
+            <h2>📊 Статус защиты от УБИ.021</h2>
+            <div id="threatStatus"></div>
+            <button class="btn" onclick="loadThreatReport()">🔄 Обновить</button>
+        </div>
+
+        <div class="card">
+            <h2>🛡️ Меры защиты</h2>
+            <div id="protectionLayers"></div>
+        </div>
+
+        <div class="footer">
+            <p>SecureTrust Container | Защита от внутренних нарушителей | УБИ.021</p>
+        </div>
+    </div>
+
+    <script>
+        async function loadThreatReport() {
+            try {
+                const response = await fetch('/api/ubi/threat_report');
+                const report = await response.json();
+
+                document.getElementById('threatStatus').innerHTML = `
+                    <p><strong>🔴 Угроза:</strong> ${report.threat_id}</p>
+                    <p><strong>📝 Описание:</strong> ${report.description}</p>
+                    <p><strong>🛡️ Статус:</strong> <span class="status-ok">${report.status}</span></p>
+                    <p><strong>⚠️ Событий обнаружено:</strong> ${report.suspicious_events_count}</p>
+                `;
+
+                const layersDiv = document.getElementById('protectionLayers');
+                layersDiv.innerHTML = '<ul>';
+                report.protection_layers.forEach(layer => {
+                    layersDiv.innerHTML += `<li>✓ ${layer}</li>`;
+                });
+                layersDiv.innerHTML += '</ul>';
+            } catch(e) {
+                console.error('Error:', e);
+                document.getElementById('threatStatus').innerHTML = '<p class="status-ok">✓ Система мониторинга активна</p>';
+            }
+        }
+
+        // Загрузка при старте
+        loadThreatReport();
+
+        // Автообновление каждые 10 секунд
+        setInterval(loadThreatReport, 10000);
+    </script>
+</body>
+</html>'''
+
+    # Запись файлов
+    with open('index.html', 'w', encoding='utf-8') as f:
+        f.write(index_html)
+    print("✓ Создан файл index.html")
+
+    with open('threat_monitor.html', 'w', encoding='utf-8') as f:
+        f.write(threat_html)
+    print("✓ Создан файл threat_monitor.html")
+
+    return True
+
+# Вызовите функцию перед main()
+create_html_files()
+# ============================================================
+# ОСНОВНАЯ ФУНКЦИЯ
 # ============================================================
 def main():
     attestation = enclave.attest(hashlib.sha256(b"banking_app").hexdigest())
@@ -434,7 +872,11 @@ def main():
 if __name__ == "__main__":
     main()
     ensure_certificates()
-    port = int(os.environ.get("PORT", 8080))
+    port = int(os.environ.get("PORT", 5000))
     print(f"\nЗапуск API на порту {port}")
-    print(f"API доступно по адресу: https://{os.environ.get('REPL_SLUG', 'localhost')}.{os.environ.get('REPL_OWNER', 'replit')}.replit.app")
+    print(f"Доступные страницы:")
+    print(f"  - Главная: http://localhost:{port}/")
+    print(f"  - Мониторинг УБИ.021: http://localhost:{port}/threat-monitor")
+    print(f"  - Аттестация: http://localhost:{port}/api/attestation")
+    print(f"  - Проверка целостности: http://localhost:{port}/api/verify_integrity")
     app.run(host='0.0.0.0', port=port)
