@@ -6,3 +6,9 @@ id = "X3K_oY03A-R0PtSsE9lL0"
 uri = "file://filetree.png"
 type = "image"
 title = "SecureTrust — File Tree"
+
+[[outputs]]
+id = "wD-c1FIy1oJje-Tr3W5L5"
+uri = "file://filetree_docker.png"
+type = "image"
+title = "SecureTrust — Docker File Tree"
