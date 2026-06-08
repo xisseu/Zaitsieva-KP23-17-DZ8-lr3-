@@ -345,12 +345,21 @@ viz = Visualizer()
 # API ЭНДПОИНТЫ (ПОСЛЕ СОЗДАНИЯ ЭКЗЕМПЛЯРОВ)
 # ============================================================
 
+@app.after_request
+def add_headers(response):
+    response.headers['X-Frame-Options'] = 'ALLOWALL'
+    response.headers['Content-Security-Policy'] = "frame-ancestors *"
+    return response
+
 @app.route('/')
 def index():
     """Главная страница с визуализацией"""
     try:
         with open('index.html', 'r', encoding='utf-8') as f:
-            return f.read()
+            content = f.read()
+        response = app.make_response(content)
+        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+        return response
     except FileNotFoundError:
         return jsonify({"error": "index.html not found"}), 404
 
@@ -359,7 +368,10 @@ def threat_monitor():
     """Страница мониторинга угроз"""
     try:
         with open('threat_monitor.html', 'r', encoding='utf-8') as f:
-            return f.read()
+            content = f.read()
+        response = app.make_response(content)
+        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+        return response
     except FileNotFoundError:
         return jsonify({"error": "threat_monitor.html not found"}), 404
 
