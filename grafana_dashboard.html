@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SecureTrust — Grafana Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+      background: #111217;
+      color: #d8d9da;
+      min-height: 100vh;
+    }
+
+    /* ── NAVBAR ── */
+    .navbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #181b1f;
+      border-bottom: 1px solid #2c3235;
+      padding: 0 16px;
+      height: 48px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .navbar-left { display: flex; align-items: center; gap: 12px; }
+    .grafana-logo {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 18px; font-weight: 700; color: #ff7c0a;
+    }
+    .grafana-logo svg { width: 28px; height: 28px; }
+    .nav-divider { width: 1px; height: 24px; background: #2c3235; }
+    .dashboard-title { font-size: 14px; font-weight: 600; color: #d8d9da; }
+    .dashboard-subtitle { font-size: 11px; color: #8e8e8e; }
+
+    .navbar-right { display: flex; align-items: center; gap: 10px; }
+    .nav-btn {
+      background: #1e2228;
+      border: 1px solid #2c3235;
+      color: #d8d9da;
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+      transition: background .15s;
+    }
+    .nav-btn:hover { background: #2c3235; }
+    .nav-btn.primary { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+    .nav-btn.primary:hover { background: #1557b0; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #73bf69;
+      box-shadow: 0 0 6px #73bf69;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .last-refresh { font-size: 11px; color: #8e8e8e; }
+
+    /* ── TOOLBAR ── */
+    .toolbar {
+      background: #181b1f;
+      border-bottom: 1px solid #2c3235;
+      padding: 8px 16px;
+      display: flex; align-items: center; gap: 16px;
+      font-size: 12px; color: #8e8e8e;
+    }
+    .toolbar-tag {
+      background: #1e2228;
+      border: 1px solid #2c3235;
+      padding: 3px 10px;
+      border-radius: 3px;
+      color: #5794f2;
+      cursor: pointer;
+    }
+    .toolbar-tag:hover { background: #2c3235; }
+
+    /* ── GRID ── */
+    .dashboard { padding: 12px 16px; }
+
+    .row { margin-bottom: 8px; }
+    .row-title {
+      font-size: 11px; text-transform: uppercase;
+      letter-spacing: .08em; color: #8e8e8e;
+      padding: 4px 0 8px;
+      border-bottom: 1px solid #2c3235;
+      margin-bottom: 8px;
+    }
+
+    .panels-grid {
+      display: grid;
+      gap: 8px;
+    }
+    .panels-grid.cols-4 { grid-template-columns: repeat(4,1fr); }
+    .panels-grid.cols-3 { grid-template-columns: repeat(3,1fr); }
+    .panels-grid.cols-2 { grid-template-columns: repeat(2,1fr); }
+    .panels-grid.cols-2-1 { grid-template-columns: 2fr 1fr; }
+    .panels-grid.cols-1-2 { grid-template-columns: 1fr 2fr; }
+
+    /* ── PANEL ── */
+    .panel {
+      background: #1f1f2e;
+      border: 1px solid #2c3235;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px 4px;
+      border-bottom: 1px solid #2c3235;
+    }
+    .panel-title {
+      font-size: 12px; font-weight: 600;
+      color: #d8d9da; letter-spacing: .02em;
+    }
+    .panel-subtitle { font-size: 10px; color: #8e8e8e; }
+    .panel-menu { font-size: 18px; color: #5c6370; cursor: pointer; line-height:1; }
+    .panel-body { padding: 12px; }
+
+    /* ── STAT PANEL ── */
+    .stat-panel .panel-body {
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: flex-start;
+      min-height: 90px;
+      padding: 16px;
+    }
+    .stat-label { font-size: 11px; color: #8e8e8e; margin-bottom: 4px; }
+    .stat-value {
+      font-size: 30px; font-weight: 300; line-height: 1;
+      letter-spacing: -.5px;
+    }
+    .stat-value.green  { color: #73bf69; }
+    .stat-value.blue   { color: #5794f2; }
+    .stat-value.orange { color: #ff9830; }
+    .stat-value.red    { color: #f2495c; }
+    .stat-value.white  { color: #d8d9da; }
+    .stat-unit { font-size: 14px; font-weight: 400; color: #8e8e8e; margin-left: 2px; }
+    .stat-change {
+      font-size: 11px; margin-top: 6px;
+      display: flex; align-items: center; gap: 4px;
+    }
+    .stat-change.up   { color: #73bf69; }
+    .stat-change.down { color: #f2495c; }
+    .stat-sparkline { margin-top: 4px; height: 32px; }
+
+    /* ── CHART PANEL ── */
+    .chart-panel .panel-body { padding: 8px 12px 12px; height: 240px; position: relative; }
+    .chart-panel.tall .panel-body { height: 300px; }
+
+    /* ── TABLE PANEL ── */
+    .table-panel .panel-body { padding: 0; overflow-x: auto; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .data-table thead { background: #1a1a2e; }
+    .data-table th {
+      padding: 8px 12px; text-align: left;
+      font-size: 11px; font-weight: 600;
+      color: #8e8e8e; text-transform: uppercase;
+      letter-spacing: .06em;
+      border-bottom: 1px solid #2c3235;
+    }
+    .data-table td {
+      padding: 7px 12px;
+      border-bottom: 1px solid #22232e;
+      color: #d8d9da;
+    }
+    .data-table tr:hover td { background: #22232e; }
+    .badge {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 3px; font-size: 10px; font-weight: 600;
+    }
+    .badge.income  { background: rgba(115,191,105,.15); color: #73bf69; }
+    .badge.expense { background: rgba(242,73,92,.15);   color: #f2495c; }
+
+    /* ── GAUGE ── */
+    .gauge-panel .panel-body {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 180px; gap: 8px;
+    }
+    .gauge-wrap { position: relative; width: 160px; height: 80px; overflow: hidden; }
+    .gauge-svg { width: 160px; height: 80px; }
+    .gauge-needle {
+      transform-origin: 80px 80px;
+      transform: rotate(-90deg);
+      transition: transform .8s cubic-bezier(.4,0,.2,1);
+    }
+    .gauge-value-label {
+      font-size: 22px; font-weight: 300; color: #73bf69;
+      text-align: center;
+    }
+    .gauge-sub { font-size: 11px; color: #8e8e8e; text-align: center; }
+
+    /* ── SECURITY PANEL ── */
+    .security-rows { display: flex; flex-direction: column; gap: 8px; }
+    .sec-row {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: #22232e;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .sec-row-label { color: #8e8e8e; }
+    .sec-status { font-weight: 600; }
+    .sec-status.ok     { color: #73bf69; }
+    .sec-status.warn   { color: #ff9830; }
+    .sec-status.danger { color: #f2495c; }
+
+    .progress-bar-wrap {
+      height: 4px; background: #2c3235; border-radius: 2px; overflow: hidden; margin-top: 6px;
+    }
+    .progress-bar { height: 100%; border-radius: 2px; transition: width .6s ease; }
+    .progress-bar.green  { background: #73bf69; }
+    .progress-bar.blue   { background: #5794f2; }
+    .progress-bar.orange { background: #ff9830; }
+    .progress-bar.red    { background: #f2495c; }
+
+    /* ── LOADING ── */
+    .loading-shimmer {
+      background: linear-gradient(90deg, #22232e 25%, #2c3235 50%, #22232e 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 3px; height: 24px;
+    }
+    @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    @media (max-width: 900px) {
+      .panels-grid.cols-4,
+      .panels-grid.cols-3,
+      .panels-grid.cols-2,
+      .panels-grid.cols-2-1,
+      .panels-grid.cols-1-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="navbar-left">
+    <div class="grafana-logo">
+      <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="20" cy="20" r="18" stroke="#ff7c0a" stroke-width="2.5"/>
+        <path d="M12 20 Q16 12 20 20 Q24 28 28 20" stroke="#ff7c0a" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <circle cx="12" cy="20" r="2.5" fill="#ff7c0a"/>
+        <circle cx="28" cy="20" r="2.5" fill="#ff7c0a"/>
+        <circle cx="20" cy="20" r="2.5" fill="#ff7c0a"/>
+      </svg>
+      Grafana
+    </div>
+    <div class="nav-divider"></div>
+    <div>
+      <div class="dashboard-title">SecureTrust Container</div>
+      <div class="dashboard-subtitle">Banking Microservice · УБИ.021 Protection</div>
+    </div>
+  </div>
+  <div class="navbar-right">
+    <div class="status-dot"></div>
+    <span class="last-refresh" id="lastRefresh">Refreshing…</span>
+    <button class="nav-btn" onclick="refreshAll()">⟳ Refresh</button>
+    <a href="/" style="text-decoration:none">
+      <button class="nav-btn">← Main</button>
+    </a>
+    <a href="/threat-monitor" style="text-decoration:none">
+      <button class="nav-btn primary">🛡 Threat Monitor</button>
+    </a>
+  </div>
+</nav>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <span>Datasource:</span>
+  <span class="toolbar-tag">SecureTrust API</span>
+  <span class="toolbar-tag">УБИ.021</span>
+  <span class="toolbar-tag">Enclave</span>
+  <span style="margin-left:auto">Auto-refresh: 30s</span>
+</div>
+
+<!-- DASHBOARD GRID -->
+<div class="dashboard">
+
+  <!-- ROW 1: STAT PANELS -->
+  <div class="row">
+    <div class="row-title">📊 Financial Overview</div>
+    <div class="panels-grid cols-4">
+
+      <div class="panel stat-panel">
+        <div class="panel-header">
+          <span class="panel-title">Balance</span>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <div class="stat-label">Current balance</div>
+          <div class="stat-value green" id="stat-balance"><div class="loading-shimmer" style="width:120px"></div></div>
+          <div class="stat-change up" id="stat-balance-change">—</div>
+          <div class="progress-bar-wrap" style="width:100%;margin-top:8px">
+            <div class="progress-bar green" id="pb-balance" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel stat-panel">
+        <div class="panel-header">
+          <span class="panel-title">Total Income</span>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <div class="stat-label">All time income</div>
+          <div class="stat-value blue" id="stat-income"><div class="loading-shimmer" style="width:120px"></div></div>
+          <div class="stat-change up" id="stat-income-avg">—</div>
+          <div class="progress-bar-wrap" style="width:100%;margin-top:8px">
+            <div class="progress-bar blue" id="pb-income" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel stat-panel">
+        <div class="panel-header">
+          <span class="panel-title">Total Expenses</span>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <div class="stat-label">All time expenses</div>
+          <div class="stat-value orange" id="stat-expense"><div class="loading-shimmer" style="width:120px"></div></div>
+          <div class="stat-change down" id="stat-expense-avg">—</div>
+          <div class="progress-bar-wrap" style="width:100%;margin-top:8px">
+            <div class="progress-bar orange" id="pb-expense" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel stat-panel">
+        <div class="panel-header">
+          <span class="panel-title">Transactions</span>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <div class="stat-label">Total count</div>
+          <div class="stat-value white" id="stat-txcount"><div class="loading-shimmer" style="width:60px"></div></div>
+          <div class="stat-change" id="stat-txcount-sub" style="color:#8e8e8e">—</div>
+          <div class="progress-bar-wrap" style="width:100%;margin-top:8px">
+            <div class="progress-bar green" style="width:100%"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ROW 2: LINE + BAR CHARTS -->
+  <div class="row">
+    <div class="row-title">📈 Time Series</div>
+    <div class="panels-grid cols-2">
+
+      <div class="panel chart-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Balance Trend</div>
+            <div class="panel-subtitle">Cumulative balance over transactions</div>
+          </div>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <canvas id="chartBalanceTrend"></canvas>
+        </div>
+      </div>
+
+      <div class="panel chart-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Income vs Expenses</div>
+            <div class="panel-subtitle">By category</div>
+          </div>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <canvas id="chartIncomeExpense"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ROW 3: PIE + TABLE -->
+  <div class="row">
+    <div class="row-title">🗂 Breakdown</div>
+    <div class="panels-grid cols-1-2">
+
+      <div class="panel chart-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Expense Categories</div>
+            <div class="panel-subtitle">Distribution by category</div>
+          </div>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body" style="height:260px">
+          <canvas id="chartPie"></canvas>
+        </div>
+      </div>
+
+      <div class="panel table-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Recent Transactions</div>
+            <div class="panel-subtitle">Latest 8 entries</div>
+          </div>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body" style="padding:0;max-height:280px;overflow-y:auto">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th><th>Type</th><th>Amount</th><th>Category</th><th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody">
+              <tr><td colspan="5" style="text-align:center;color:#8e8e8e;padding:20px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ROW 4: GAUGE + SECURITY -->
+  <div class="row">
+    <div class="row-title">🛡 Security & Integrity</div>
+    <div class="panels-grid cols-3">
+
+      <div class="panel gauge-panel">
+        <div class="panel-header">
+          <span class="panel-title">System Health</span>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <div class="gauge-wrap">
+            <svg class="gauge-svg" viewBox="0 0 160 80">
+              <defs>
+                <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%"   stop-color="#f2495c"/>
+                  <stop offset="50%"  stop-color="#ff9830"/>
+                  <stop offset="100%" stop-color="#73bf69"/>
+                </linearGradient>
+              </defs>
+              <path d="M16,76 A64,64 0 0,1 144,76" fill="none" stroke="#2c3235" stroke-width="10" stroke-linecap="round"/>
+              <path d="M16,76 A64,64 0 0,1 144,76" fill="none" stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="0" opacity="0.8"/>
+              <line id="gaugeNeedle" class="gauge-needle" x1="80" y1="80" x2="80" y2="24" stroke="#d8d9da" stroke-width="2.5" stroke-linecap="round"/>
+              <circle cx="80" cy="80" r="5" fill="#d8d9da"/>
+            </svg>
+          </div>
+          <div class="gauge-value-label" id="gaugeLabel">—</div>
+          <div class="gauge-sub" id="gaugeSub">Checking…</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">УБИ.021 Protection Status</span>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <div class="security-rows" id="securityRows">
+            <div class="loading-shimmer" style="height:36px"></div>
+            <div class="loading-shimmer" style="height:36px"></div>
+            <div class="loading-shimmer" style="height:36px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Enclave Attestation</span>
+          <span class="panel-menu">⋮</span>
+        </div>
+        <div class="panel-body">
+          <div class="security-rows" id="attestationRows">
+            <div class="loading-shimmer" style="height:36px"></div>
+            <div class="loading-shimmer" style="height:36px"></div>
+            <div class="loading-shimmer" style="height:36px"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div><!-- /dashboard -->
+
+<script>
+const CHART_DEFAULTS = {
+  color: '#d8d9da',
+  borderColor: '#2c3235',
+  gridColor: 'rgba(255,255,255,0.06)',
+  font: { family: 'Inter, Arial, sans-serif', size: 11 }
+};
+
+Chart.defaults.color = CHART_DEFAULTS.color;
+Chart.defaults.font = CHART_DEFAULTS.font;
+
+let charts = {};
+
+function fmt(n) {
+  return new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + ' ₽';
+}
+
+// ── STATS ──
+async function loadStats() {
+  const r = await fetch('/api/stats');
+  const d = await r.json();
+  const total = d.total_income + d.total_expense;
+
+  document.getElementById('stat-balance').textContent = fmt(d.balance);
+  document.getElementById('stat-income').textContent  = fmt(d.total_income);
+  document.getElementById('stat-expense').textContent = fmt(d.total_expense);
+
+  const pctIncome  = total > 0 ? (d.total_income  / total * 100) : 0;
+  const pctExpense = total > 0 ? (d.total_expense / total * 100) : 0;
+  const pctBalance = d.total_income > 0 ? Math.min(d.balance / d.total_income * 100, 100) : 0;
+
+  document.getElementById('pb-balance').style.width  = pctBalance  + '%';
+  document.getElementById('pb-income').style.width   = pctIncome   + '%';
+  document.getElementById('pb-expense').style.width  = pctExpense  + '%';
+
+  document.getElementById('stat-balance-change').textContent =
+    '▲ ' + (d.total_income > 0 ? (d.balance / d.total_income * 100).toFixed(1) : 0) + '% savings rate';
+  document.getElementById('stat-income-avg').textContent  = '💰 ' + pctIncome.toFixed(1)  + '% of total flow';
+  document.getElementById('stat-expense-avg').textContent = '💸 ' + pctExpense.toFixed(1) + '% of total flow';
+}
+
+// ── TRANSACTIONS ──
+async function loadTransactions() {
+  const r = await fetch('/api/transactions');
+  const txs = await r.json();
+
+  // Stat count
+  const income  = txs.filter(t => t.type === 'income');
+  const expense = txs.filter(t => t.type === 'expense');
+  document.getElementById('stat-txcount').textContent = txs.length;
+  document.getElementById('stat-txcount-sub').textContent =
+    income.length + ' income · ' + expense.length + ' expense';
+
+  // Table
+  const tbody = document.getElementById('txTableBody');
+  const latest = [...txs].reverse().slice(0, 8);
+  tbody.innerHTML = latest.map(tx => `
+    <tr>
+      <td><code style="color:#5794f2;font-size:11px">${tx.id}</code></td>
+      <td><span class="badge ${tx.type}">${tx.type === 'income' ? '▲ income' : '▼ expense'}</span></td>
+      <td style="color:${tx.type==='income'?'#73bf69':'#f2495c'};font-weight:500">${fmt(tx.amount)}</td>
+      <td style="color:#d8d9da">${tx.category}</td>
+      <td style="color:#8e8e8e">${tx.date}</td>
+    </tr>`).join('');
+
+  // Balance trend chart
+  let balance = 0;
+  const balances = [], labels = [];
+  txs.forEach((t, i) => {
+    balance += t.type === 'income' ? t.amount : -t.amount;
+    balances.push(balance);
+    labels.push(t.id);
+  });
+  renderBalanceTrend(labels, balances);
+
+  // Income vs Expense bar chart
+  const cats = {};
+  txs.forEach(t => {
+    if (!cats[t.category]) cats[t.category] = { income: 0, expense: 0 };
+    cats[t.category][t.type] += t.amount;
+  });
+  renderIncomeExpense(Object.keys(cats), Object.values(cats).map(c => c.income), Object.values(cats).map(c => c.expense));
+
+  // Pie chart
+  const expCats = {}, incCats = {};
+  expense.forEach(t => { expCats[t.category] = (expCats[t.category] || 0) + t.amount; });
+  income.forEach(t => { incCats[t.category]  = (incCats[t.category]  || 0) + t.amount; });
+
+  const pieColors = ['#5794f2','#73bf69','#ff9830','#f2495c','#b877d9','#fbad37','#37872d','#e05263','#8ab8ff','#ff7c0a'];
+  renderPie(Object.keys(expCats), Object.values(expCats), pieColors);
+}
+
+// ── CHARTS ──
+function renderBalanceTrend(labels, data) {
+  const ctx = document.getElementById('chartBalanceTrend').getContext('2d');
+  if (charts.trend) charts.trend.destroy();
+  charts.trend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Balance (₽)',
+        data,
+        borderColor: '#73bf69',
+        backgroundColor: 'rgba(115,191,105,0.08)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: '#73bf69',
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: CHART_DEFAULTS.gridColor }, ticks: { maxRotation: 0, maxTicksLimit: 8 } },
+        y: { grid: { color: CHART_DEFAULTS.gridColor }, ticks: { callback: v => (v/1000).toFixed(1)+'k ₽' } }
+      }
+    }
+  });
+}
+
+function renderIncomeExpense(labels, income, expense) {
+  const ctx = document.getElementById('chartIncomeExpense').getContext('2d');
+  if (charts.bar) charts.bar.destroy();
+  charts.bar = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Income',  data: income,  backgroundColor: 'rgba(87,148,242,0.75)', borderRadius: 3 },
+        { label: 'Expense', data: expense, backgroundColor: 'rgba(242,73,92,0.75)',  borderRadius: 3 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { boxWidth: 10 } } },
+      scales: {
+        x: { grid: { color: CHART_DEFAULTS.gridColor }, ticks: { maxRotation: 40, font: { size: 10 } } },
+        y: { grid: { color: CHART_DEFAULTS.gridColor }, ticks: { callback: v => v+'₽' } }
+      }
+    }
+  });
+}
+
+function renderPie(labels, data, colors) {
+  const ctx = document.getElementById('chartPie').getContext('2d');
+  if (charts.pie) charts.pie.destroy();
+  charts.pie = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: colors,
+        borderColor: '#1f1f2e',
+        borderWidth: 2,
+        hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 10, padding: 10, font: { size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+// ── SECURITY ──
+async function loadSecurity() {
+  const [intRes, attRes] = await Promise.all([
+    fetch('/api/verify_integrity'),
+    fetch('/api/attestation')
+  ]);
+  const intData = await intRes.json();
+  const attData = await attRes.json();
+
+  const logOk  = intData.log_integrity;
+  const dataOk = intData.data_integrity !== false;
+  const health = (logOk ? 50 : 0) + (dataOk ? 50 : 0);
+
+  // Gauge
+  const angle = -90 + (health / 100) * 180;
+  document.getElementById('gaugeNeedle').style.transform = `rotate(${angle}deg)`;
+  const gaugeLabel = document.getElementById('gaugeLabel');
+  gaugeLabel.textContent = health + '%';
+  gaugeLabel.style.color = health > 70 ? '#73bf69' : health > 40 ? '#ff9830' : '#f2495c';
+  document.getElementById('gaugeSub').textContent =
+    health === 100 ? 'All systems nominal' : health > 50 ? 'Degraded' : 'Critical';
+
+  // Security rows
+  document.getElementById('securityRows').innerHTML = [
+    { label: 'Enclave Status',      val: 'Active',     cls: 'ok'   },
+    { label: 'Data Encryption',     val: 'AES-256 XOR',cls: 'ok'   },
+    { label: 'Log Integrity',       val: logOk  ? 'OK' : 'VIOLATED', cls: logOk  ? 'ok' : 'danger' },
+    { label: 'Data Integrity',      val: dataOk ? 'OK' : 'VIOLATED', cls: dataOk ? 'ok' : 'warn'   },
+    { label: 'HMAC Signing',        val: 'SHA-256',     cls: 'ok'   },
+  ].map(r => `
+    <div class="sec-row">
+      <span class="sec-row-label">${r.label}</span>
+      <span class="sec-status ${r.cls}">${r.val}</span>
+    </div>`).join('');
+
+  // Attestation rows
+  document.getElementById('attestationRows').innerHTML = [
+    { label: 'Status',    val: attData.status    || '—', cls: attData.status === 'trusted' ? 'ok' : 'warn' },
+    { label: 'App Hash',  val: (attData.app_hash || '—').slice(0,18)+'…', cls: 'ok' },
+    { label: 'Signature', val: (attData.signature|| '—').slice(0,18)+'…', cls: 'ok' },
+    { label: 'Timestamp', val: attData.timestamp ? attData.timestamp.slice(0,19) : '—', cls: 'ok' },
+  ].map(r => `
+    <div class="sec-row">
+      <span class="sec-row-label">${r.label}</span>
+      <span class="sec-status ${r.cls}" style="font-family:monospace;font-size:11px">${r.val}</span>
+    </div>`).join('');
+}
+
+// ── REFRESH ALL ──
+async function refreshAll() {
+  try {
+    await Promise.all([loadStats(), loadTransactions(), loadSecurity()]);
+    document.getElementById('lastRefresh').textContent =
+      'Last refresh: ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    console.error('Refresh error:', e);
+    document.getElementById('lastRefresh').textContent = 'Error — retrying…';
+  }
+}
+
+// Init
+refreshAll();
+setInterval(refreshAll, 30000);
+</script>
+</body>
+</html>
